@@ -1,0 +1,1284 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Azure Natural Reader Clone (Always Visible Volume)</title>
+
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+    darkMode: 'media',
+    theme: {
+        extend: {
+            colors: {
+                gray: { 750: '#2d3748', 850: '#1a202c', 950: '#0d1117' }
+            },
+            screens: { 'xs': '480px' }
+        }
+    }
+}
+</script>
+
+<!-- FontAwesome -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+<!-- Microsoft Azure Speech SDK -->
+<script src="https://aka.ms/csspeech/jsbrowserpackageraw"></script>
+
+<!-- Marked.js -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<style>
+body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    overscroll-behavior-y: none;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+@media (prefers-color-scheme: dark) {
+    ::-webkit-scrollbar-thumb { background: #4b5563; }
+    ::-webkit-scrollbar-thumb:hover { background: #6b7280; }
+}
+
+/* --- Markdown Styles --- */
+.markdown-body {
+    line-height: 1.8;
+    font-size: 1.15rem;
+    color: #374151;
+    padding-bottom: 120px;
+    text-align: left;
+}
+@media (min-width: 768px) { .markdown-body { font-size: 1.25rem; } }
+@media (prefers-color-scheme: dark) { .markdown-body { color: #d1d5db; } }
+
+.markdown-body p { margin-bottom: 0.8em; margin-top: 0; }
+.markdown-body p:empty { display: none; }
+.markdown-body > *:first-child { margin-top: 0; }
+.markdown-body > *:last-child { margin-bottom: 0; }
+
+.markdown-body strong, .markdown-body b { font-weight: 700 !important; }
+.markdown-body em, .markdown-body i { font-style: italic !important; }
+
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
+    margin-top: 1.2em; margin-bottom: 0.6em; font-weight: bold; line-height: 1.3; color: #111827;
+}
+@media (prefers-color-scheme: dark) {
+    .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 { color: #f3f4f6; }
+}
+.markdown-body h1 { font-size: 1.8em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.3em; }
+.markdown-body h2 { font-size: 1.5em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.2em; }
+@media (prefers-color-scheme: dark) { .markdown-body h1, .markdown-body h2 { border-color: #374151; } }
+
+.markdown-body ul { list-style: disc outside; margin-left: 1.5em; margin-bottom: 1em; }
+.markdown-body ol { list-style: decimal outside; margin-left: 1.5em; margin-bottom: 1em; }
+.markdown-body li { margin-bottom: 0.3em; }
+
+.markdown-body blockquote {
+    border-left: 4px solid #e5e7eb; padding: 0.5em 1em; color: #6b7280; font-style: italic; margin: 1em 0; background-color: rgba(243, 244, 246, 0.5); border-radius: 0 4px 4px 0;
+}
+@media (prefers-color-scheme: dark) {
+    .markdown-body blockquote { border-color: #4b5563; color: #9ca3af; background-color: rgba(31, 41, 55, 0.5); }
+}
+
+.markdown-body pre {
+    background-color: #f1f5f9; padding: 1em; border-radius: 0.5em; overflow-x: auto; margin: 1em 0; font-family: monospace; font-size: 0.9em; border: 1px solid #e2e8f0;
+}
+.markdown-body code {
+    background-color: #f1f5f9; padding: 0.2em 0.4em; border-radius: 0.25em; font-family: monospace; font-size: 0.85em; color: #ef4444;
+}
+@media (prefers-color-scheme: dark) {
+    .markdown-body pre { background-color: #1f2937; border-color: #374151; }
+    .markdown-body code { background-color: #1f2937; color: #f87171; }
+}
+
+.markdown-body a { color: #2563eb; text-decoration: underline; }
+@media (prefers-color-scheme: dark) { .markdown-body a { color: #60a5fa; } }
+
+/* --- Reader Chunk Interaction --- */
+.reader-chunk {
+    cursor: pointer;
+    border-radius: 2px;
+    transition: background-color 0.1s ease;
+    display: inline;
+    -webkit-tap-highlight-color: transparent;
+    scroll-margin-top: 140px;
+}
+@media (min-width: 768px) {
+    .reader-chunk { scroll-margin-top: 160px; }
+}
+
+.reader-chunk:hover { background-color: rgba(226, 232, 240, 0.5); }
+@media (prefers-color-scheme: dark) {
+    .reader-chunk:hover { background-color: rgba(99, 102, 241, 0.2); }
+}
+
+/* Active Highlight */
+.active-chunk {
+    background-color: #fef08a;
+    box-shadow: 0 0 0 2px #fef08a;
+    color: #000 !important;
+    border-radius: 2px;
+    position: relative;
+    z-index: 10;
+    text-decoration: none !important;
+}
+.active-chunk * { color: #000 !important; text-decoration: none !important; }
+
+@media (prefers-color-scheme: dark) {
+    .active-chunk {
+        background-color: #b45309;
+        box-shadow: 0 0 0 2px #b45309;
+        color: #fff !important;
+    }
+    .active-chunk * { color: #fff !important; }
+}
+
+/* Editor */
+#text-editor {
+    outline: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    min-height: 50vh;
+    white-space: pre-wrap;
+    line-height: 1.8;
+    padding-bottom: 80px;
+    font-family: inherit;
+    -webkit-tap-highlight-color: transparent;
+}
+#text-editor:empty:before {
+    content: attr(placeholder);
+    color: #9ca3af;
+}
+@media (prefers-color-scheme: dark) {
+    #text-editor { color: #d1d5db; }
+    #text-editor:empty:before { color: #6b7280; }
+}
+
+#reader-view { min-height: 50vh; }
+
+/* Controls */
+input[type=range] { -webkit-appearance: none; background: transparent; }
+input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; height: 14px; width: 14px; border-radius: 50%; background: #4f46e5; cursor: pointer; margin-top: -5px; transition: transform 0.1s;
+}
+@media (hover: hover) { input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); } }
+input[type=range]::-webkit-slider-runnable-track {
+    width: 100%; height: 4px; cursor: pointer; background: #e2e8f0; border-radius: 2px;
+}
+@media (prefers-color-scheme: dark) {
+    input[type=range]::-webkit-slider-runnable-track { background: #4b5563; }
+    input[type=range]::-webkit-slider-thumb { background: #818cf8; }
+}
+.vol-slider::-webkit-slider-thumb { background: #64748b; }
+@media (prefers-color-scheme: dark) { .vol-slider::-webkit-slider-thumb { background: #9ca3af; } }
+
+.btn-active:active { transform: scale(0.95); }
+#progress-ring { transition: stroke-dashoffset 0.3s linear; }
+</style>
+</head>
+<body class="h-[100dvh] flex flex-col overflow-hidden bg-[#f3f4f6] dark:bg-gray-950 transition-colors duration-300 font-sans">
+
+<!-- Header -->
+<header class="bg-white dark:bg-gray-800 shadow-sm z-10 shrink-0 relative transition-colors duration-300">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 min-h-[2.5rem] md:h-14 flex flex-wrap md:flex-nowrap items-center justify-between py-1.5 md:py-0 gap-y-1">
+
+        <!-- Logo -->
+        <div class="flex items-center gap-3 w-1/2 md:w-1/4 md:min-w-[180px] order-1">
+            <div class="bg-indigo-600 dark:bg-indigo-500 text-white p-1 md:p-1.5 rounded-lg shadow-sm">
+                <i class="fa-solid fa-wave-square text-lg"></i>
+            </div>
+            <div class="flex flex-col md:flex-row md:items-baseline md:gap-2 leading-tight">
+                <h1 class="font-bold text-lg md:text-xl text-gray-800 dark:text-gray-100 leading-none">Reader<span class="text-indigo-600 dark:text-indigo-400">Plus</span></h1>
+                <span class="text-[10px] md:text-xs font-mono bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded w-fit">v6.3</span>
+            </div>
+        </div>
+
+        <!-- Center Controls -->
+        <div class="flex items-center justify-center gap-2 md:gap-4 w-full md:flex-1 relative order-3 md:order-2 pb-1 md:pb-0 border-t md:border-t-0 border-gray-100 dark:border-gray-700 pt-1 md:pt-0">
+
+            <!-- Left Wing: Stop -->
+            <div class="flex-1 flex items-center justify-end pr-1 md:pr-3">
+                <button id="btn-stop" class="group flex flex-col items-center justify-center gap-1 text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 transition btn-active disabled:opacity-30 disabled:cursor-not-allowed" title="停止 / 编辑" disabled>
+                    <div class="w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-gray-200 dark:border-gray-600 group-hover:border-red-200 dark:group-hover:border-red-900/50 group-hover:bg-red-50 dark:group-hover:bg-red-900/20 flex items-center justify-center transition-all">
+                        <i id="icon-stop-edit" class="fa-solid fa-pen-to-square text-xs md:text-sm"></i>
+                    </div>
+                </button>
+            </div>
+
+            <!-- Compact Playback Controls -->
+            <div class="flex items-center gap-1 md:gap-1.5">
+                <button id="btn-prev" class="text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 transition transform active:scale-90 p-2 md:p-2.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="上一句">
+                    <i class="fa-solid fa-angles-left text-base md:text-lg"></i>
+                </button>
+
+                <!-- Center Play with Progress Ring -->
+                <div class="relative flex items-center justify-center w-10 h-10 md:w-12 md:h-12 shrink-0">
+                    <svg class="absolute top-0 left-0 w-full h-full transform -rotate-90 drop-shadow-sm pointer-events-none z-0" viewBox="0 0 80 80">
+                        <circle cx="40" cy="40" r="36" fill="transparent" stroke="currentColor" class="text-gray-200 dark:text-gray-700" stroke-width="3"></circle>
+                        <circle id="progress-ring" cx="40" cy="40" r="36" fill="transparent" stroke="currentColor" class="text-green-500 dark:text-green-400" stroke-width="3" stroke-dasharray="226.2" stroke-dashoffset="226.2" stroke-linecap="round"></circle>
+                    </svg>
+                    <button id="btn-play-toggle" class="relative z-10 bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 text-white rounded-full w-8 h-8 md:w-10 md:h-10 flex items-center justify-center shadow-xl transition transform active:scale-95 btn-active focus:ring-4 focus:ring-indigo-200 dark:focus:ring-indigo-900">
+                        <i class="fa-solid fa-play pl-1 text-base md:text-lg" id="icon-play"></i>
+                        <i class="fa-solid fa-pause text-base md:text-lg hidden" id="icon-pause"></i>
+                        <svg id="play-spinner" class="hidden animate-spin h-4 w-4 md:h-5 md:w-5 text-white absolute" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <button id="btn-next" class="text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 transition transform active:scale-90 p-2 md:p-2.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="下一句">
+                    <i class="fa-solid fa-angles-right text-base md:text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Right Wing: Volume -->
+            <div class="flex-1 flex items-center justify-start pl-1 md:pl-3">
+                <div class="flex items-center gap-2 w-20 md:w-28 transition-all duration-300 overflow-hidden p-1 rounded-full bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700">
+                    <i class="fa-solid fa-volume-high text-gray-400 dark:text-gray-500 pl-2 text-xs md:text-sm"></i>
+                    <input type="range" id="volume-slider" min="0" max="1.5" step="0.1" value="1.0" class="vol-slider w-full h-1 accent-gray-500 cursor-pointer opacity-100 pr-2">
+                </div>
+            </div>
+
+            <!-- Volume/Status Badge Positioned Below Controls -->
+            <div id="status-badge" class="hidden absolute -bottom-5 z-50 bg-gray-800 dark:bg-gray-700 text-white text-[10px] px-2 py-1 rounded-full opacity-0 transition-all duration-300 whitespace-nowrap shadow-lg border border-gray-700 dark:border-gray-600 pointer-events-none">Ready</div>
+        </div>
+
+        <!-- Right Tools -->
+        <div class="flex items-center justify-end gap-2 w-1/2 md:w-1/4 md:min-w-[180px] order-2 md:order-3">
+            <button id="btn-settings" class="text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 font-medium text-sm flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 px-2 md:px-3 py-2 rounded-full border border-transparent hover:border-gray-200 dark:hover:border-gray-600 transition">
+                <i class="fa-solid fa-sliders text-lg md:text-base"></i>
+                <span class="hidden lg:inline">设置</span>
+            </button>
+            <button id="btn-paste-replace" class="text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 w-9 h-9 md:w-10 md:h-10 flex items-center justify-center hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-full transition" title="清空并粘贴">
+                <i class="fa-solid fa-clipboard text-lg"></i>
+            </button>
+            <button id="btn-clear" class="text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 w-9 h-9 md:w-10 md:h-10 flex items-center justify-center hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition" title="清空文本">
+                <i class="fa-solid fa-trash-can text-lg"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Secondary Toolbar -->
+    <div class="border-t border-gray-100 dark:border-gray-700 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm transition-colors duration-300">
+        <div class="max-w-4xl mx-auto px-4 h-auto md:h-10 py-1.5 md:py-0 flex flex-wrap md:flex-nowrap items-center justify-center sm:justify-between gap-2 md:gap-4 text-sm">
+            <div class="flex items-center gap-2 w-full md:w-auto md:flex-1 md:max-w-md min-w-0 border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-700 pb-2 md:pb-0 md:pr-4">
+                <div class="bg-indigo-50 dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 p-1.5 rounded-md shrink-0">
+                    <i class="fa-solid fa-microphone-lines"></i>
+                </div>
+                <select id="voice-select" class="bg-transparent border-none focus:ring-0 text-gray-700 dark:text-gray-200 font-medium w-full cursor-pointer truncate outline-none hover:text-indigo-700 dark:hover:text-indigo-400 transition text-base md:text-sm py-1">
+                    <option value="" disabled selected>正在初始化...</option>
+                </select>
+            </div>
+            <div class="flex items-center justify-between md:justify-start gap-3 w-full md:w-auto shrink-0">
+                <span class="text-gray-400 dark:text-gray-500 text-xs uppercase tracking-wider font-bold">Speed</span>
+                <div class="flex items-center gap-2 flex-1 md:flex-none md:w-32 group">
+                    <span class="text-xs text-gray-400 dark:text-gray-500">0.5x</span>
+                    <input type="range" id="speed-slider" min="0.5" max="2.0" step="0.1" value="1.0" class="w-full accent-indigo-600 dark:accent-indigo-500">
+                    <span class="text-xs text-gray-400 dark:text-gray-500">2x</span>
+                </div>
+                <span id="speed-display" class="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-bold px-2 py-1 rounded min-w-[3rem] text-center">1.0x</span>
+                <!-- Auto-scroll toggle (iOS-style switch) -->
+                <label class="relative inline-flex items-center cursor-pointer ml-2" title="朗读位置跟随滚动">
+                    <input type="checkbox" id="auto-scroll-toggle" class="sr-only peer" checked>
+                    <div class="w-9 h-5 bg-gray-300 dark:bg-gray-600 peer-checked:bg-indigo-500 rounded-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+                    <span class="text-xs text-gray-600 dark:text-gray-300 ml-1.5 hidden md:inline">跟随滚动</span>
+                </label>
+                <!-- Font Size Control -->
+                <div class="flex items-center gap-0.5 ml-2">
+                    <button id="font-decrease" class="w-6 h-6 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition" title="缩小字体">
+                        <span class="text-xs font-bold">A-</span>
+                    </button>
+                    <span id="font-size-display" class="text-xs text-gray-500 dark:text-gray-400 w-8 text-center">16px</span>
+                    <button id="font-increase" class="w-6 h-6 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition" title="放大字体">
+                        <span class="text-xs font-bold">A+</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Main Content -->
+<main class="flex-1 overflow-y-auto relative bg-[#f8f9fa] dark:bg-gray-950 flex justify-center scroll-smooth transition-colors duration-300" id="main-scroll">
+    <div class="w-full max-w-3xl bg-white dark:bg-gray-850 my-0 md:my-8 shadow-none md:shadow-sm border-x-0 md:border border-gray-200 dark:border-gray-700 p-4 md:p-16 rounded-none md:rounded-lg transition-all group h-fit min-h-[calc(100vh-12rem)]">
+
+        <div id="editor-overlay" class="hidden mb-4 flex items-center gap-2 text-indigo-600 dark:text-indigo-400 text-sm font-medium animate-pulse">
+            <i class="fa-solid fa-bolt"></i>
+            <span>阅读模式：准备就绪，点击播放</span>
+        </div>
+
+        <!-- 1. Raw Editor (Input) -->
+        <div id="text-editor"
+            contenteditable="true"
+            placeholder="在此粘贴 Markdown 文本或输入内容..."
+            class="text-gray-700 dark:text-gray-300 selection:bg-indigo-100 dark:selection:bg-indigo-900 selection:text-indigo-900 dark:selection:text-indigo-100 markdown-body focus:outline-none focus:ring-0">在此粘贴 Markdown 文本或输入内容...</div>
+
+        <!-- 2. Rendered Reader View (Output) -->
+        <div id="reader-view" class="markdown-body hidden"></div>
+    </div>
+</main>
+
+<!-- Settings Modal -->
+<div id="settings-modal" class="fixed inset-0 bg-gray-900/50 dark:bg-black/70 backdrop-blur-sm z-50 hidden flex items-center justify-center opacity-0 transition-opacity duration-300">
+    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6 transform scale-95 transition-transform duration-300 max-h-[90vh] flex flex-col" id="settings-content">
+        <div class="flex justify-between items-center mb-4 border-b border-gray-100 dark:border-gray-700 pb-4 shrink-0">
+            <div class="flex items-center gap-2">
+                <i class="fa-brands fa-microsoft text-blue-500 text-xl"></i>
+                <h2 class="text-xl font-bold text-gray-800 dark:text-white">Azure Speech 配置</h2>
+            </div>
+            <button id="close-settings" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center justify-center transition">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+        <div class="space-y-4 overflow-y-auto flex-1 min-h-0 pr-1">
+            <div class="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl border border-blue-100 dark:border-blue-800/30 flex gap-3">
+                <i class="fa-solid fa-shield-halved text-blue-600 dark:text-blue-400 mt-0.5 shrink-0"></i>
+                <p class="text-xs text-blue-700 dark:text-blue-300 leading-relaxed">
+                    API 密钥仅存储在本地浏览器 LocalStorage 中。可添加多个 API 配置，通过轮询分散请求避免限流。
+                </p>
+            </div>
+            <!-- Mode Selection -->
+            <div class="flex items-center gap-4 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl">
+                <span class="text-sm font-bold text-gray-700 dark:text-gray-300 shrink-0">调度模式</span>
+                <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-600 dark:text-gray-300">
+                    <input type="radio" name="api-mode" value="round-robin" id="mode-roundrobin" checked class="accent-indigo-600">
+                    轮询
+                </label>
+                <label class="flex items-center gap-1.5 cursor-pointer text-sm text-gray-600 dark:text-gray-300">
+                    <input type="radio" name="api-mode" value="single" id="mode-single" class="accent-indigo-600">
+                    单个
+                </label>
+                <select id="single-api-select" class="ml-auto bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-sm px-2 py-1 outline-none text-gray-700 dark:text-gray-200 hidden max-w-[160px] truncate">
+                </select>
+            </div>
+            <!-- API List -->
+            <div id="api-list" class="space-y-3">
+                <!-- API items will be rendered here dynamically -->
+            </div>
+            <!-- Add API Button -->
+            <button id="btn-add-api" class="w-full border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl py-2.5 text-gray-500 dark:text-gray-400 hover:border-indigo-400 hover:text-indigo-600 dark:hover:border-indigo-500 dark:hover:text-indigo-400 transition text-sm font-medium flex items-center justify-center gap-2">
+                <i class="fa-solid fa-plus"></i> 添加 API 配置
+            </button>
+        </div>
+        <div class="mt-4 flex flex-wrap justify-end gap-2 shrink-0 border-t border-gray-100 dark:border-gray-700 pt-4">
+            <button id="btn-export-config" class="text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 text-sm flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition">
+                <i class="fa-solid fa-download"></i> 导出
+            </button>
+            <label class="text-gray-600 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 text-sm flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition cursor-pointer">
+                <i class="fa-solid fa-upload"></i> 导入
+                <input type="file" id="import-config-file" accept=".json" class="hidden">
+            </label>
+            <button id="save-settings" class="bg-indigo-600 dark:bg-indigo-500 hover:bg-indigo-700 dark:hover:bg-indigo-600 text-white px-6 py-2.5 rounded-xl font-bold shadow-lg transition sm:w-auto w-full">
+                保存设置
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="fixed top-36 left-1/2 transform -translate-x-1/2 bg-gray-900/90 dark:bg-white/90 backdrop-blur text-white dark:text-gray-900 px-6 py-3 rounded-full shadow-2xl opacity-0 transition-all duration-300 pointer-events-none z-[100] flex items-center gap-3 translate-y-[-20px] max-w-[90vw] text-center">
+    <i class="fa-solid fa-circle-info text-indigo-300 dark:text-indigo-600 shrink-0"></i>
+    <span id="toast-msg">Notification</span>
+</div>
+
+<script>
+// --- Globals ---
+const editor = document.getElementById('text-editor');
+const readerView = document.getElementById('reader-view');
+const btnPlayToggle = document.getElementById('btn-play-toggle');
+const iconPlay = document.getElementById('icon-play');
+const iconPause = document.getElementById('icon-pause');
+const playSpinner = document.getElementById('play-spinner');
+const btnStop = document.getElementById('btn-stop');
+const iconStopEdit = document.getElementById('icon-stop-edit');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const btnSettings = document.getElementById('btn-settings');
+const btnClear = document.getElementById('btn-clear');
+const btnPasteReplace = document.getElementById('btn-paste-replace');
+const modal = document.getElementById('settings-modal');
+const closeSettingsBtn = document.getElementById('close-settings');
+const saveSettingsBtn = document.getElementById('save-settings');
+const voiceSelect = document.getElementById('voice-select');
+const speedSlider = document.getElementById('speed-slider');
+const speedDisplay = document.getElementById('speed-display');
+const volumeSlider = document.getElementById('volume-slider');
+const editorOverlay = document.getElementById('editor-overlay');
+const statusBadge = document.getElementById('status-badge');
+const progressRing = document.getElementById('progress-ring');
+
+let audioContext = null;
+let gainNode = null;
+let currentSourceNode = null;
+
+// Multi-API support
+const synthesizerPool = new Map();
+let apiRoundRobinIndex = 0;
+let currentApiId = null;
+
+let chunksData = [];
+let currentChunkIndex = -1;
+const audioCache = new Map();
+const RING_CIRCUMFERENCE = 2 * Math.PI * 36;
+
+let isReaderMode = false;
+let isPlaying = false;
+let isPaused = false;
+let rawTextBackup = "";
+
+// --- Init ---
+document.addEventListener('DOMContentLoaded', () => {
+    marked.setOptions({ breaks: true, gfm: true });
+    migrateOldSettings();
+    loadSettings();
+    const apis = getEnabledApis();
+    if (apis.length === 0) setTimeout(openModal, 500);
+    else initApis();
+    renderApiList();
+
+    setProgress(0);
+    const savedVol = localStorage.getItem('azure_reader_volume');
+    if (savedVol !== null) volumeSlider.value = savedVol;
+
+    // Load auto-scroll setting
+    const savedAutoScroll = localStorage.getItem('azure_reader_auto_scroll');
+    document.getElementById('auto-scroll-toggle').checked = savedAutoScroll !== 'false';
+
+    // Load font size setting
+    const savedFontSize = localStorage.getItem('azure_reader_font_size') || '16';
+    document.getElementById('text-editor').style.fontSize = savedFontSize + 'px';
+    document.getElementById('reader-view').style.fontSize = savedFontSize + 'px';
+    document.getElementById('font-size-display').textContent = savedFontSize + 'px';
+});
+
+// --- Event Listeners ---
+
+volumeSlider.addEventListener('input', (e) => {
+    const val = parseFloat(e.target.value);
+    localStorage.setItem('azure_reader_volume', val);
+    if (gainNode) gainNode.gain.value = val;
+
+    statusBadge.classList.remove('hidden', 'opacity-0');
+    statusBadge.textContent = `音量: ${Math.round(val * 100)}%`;
+});
+
+volumeSlider.addEventListener('change', () => {
+    setTimeout(() => {
+        if(isReaderMode) updateUIState(isPlaying && !isPaused ? 'playing' : 'paused');
+        else updateUIState('stopped');
+    }, 800);
+});
+
+btnPlayToggle.addEventListener('click', async () => {
+    await initAudioContext();
+    if (isReaderMode) {
+        if (isPlaying) {
+            if (isPaused) {
+                audioContext.resume();
+                isPaused = false;
+                updateUIState('playing');
+            } else {
+                audioContext.suspend();
+                isPaused = true;
+                updateUIState('paused');
+            }
+        } else {
+            playChunk(0);
+        }
+    } else {
+        processTextToReaderMode(true, false);
+    }
+});
+
+btnStop.addEventListener('click', stopEverything);
+btnPrev.addEventListener('click', skipPrev);
+btnNext.addEventListener('click', skipNext);
+
+btnPasteReplace.addEventListener('click', async () => {
+    stopEverything();
+    editor.innerHTML = '';
+    editor.focus();
+
+    try {
+        const text = await navigator.clipboard.readText();
+        if (text) {
+            document.execCommand('insertText', false, text);
+            showToast("已粘贴，准备转换...");
+            setTimeout(() => processTextToReaderMode(false, true), 200);
+        } else {
+            showToast("已清空，请按 Ctrl+V 粘贴");
+        }
+    } catch (err) {
+        showToast("已清空，请按 Ctrl+V 粘贴");
+    }
+});
+
+editor.addEventListener('paste', () => {
+    setTimeout(() => processTextToReaderMode(false, true), 100);
+});
+
+btnClear.addEventListener('click', () => {
+    stopEverything();
+    editor.innerHTML = '';
+    editor.focus();
+    showToast("文本已清空");
+});
+
+btnSettings.addEventListener('click', openModal);
+closeSettingsBtn.addEventListener('click', closeModal);
+saveSettingsBtn.addEventListener('click', saveAndReload);
+document.getElementById('btn-add-api').addEventListener('click', () => addApiItem());
+document.getElementById('mode-roundrobin').addEventListener('change', updateModeUI);
+document.getElementById('mode-single').addEventListener('change', updateModeUI);
+document.getElementById('btn-export-config').addEventListener('click', exportConfig);
+document.getElementById('import-config-file').addEventListener('change', importConfig);
+speedSlider.addEventListener('input', (e) => { speedDisplay.textContent = e.target.value + 'x'; audioCache.clear(); });
+document.getElementById('auto-scroll-toggle').addEventListener('change', toggleAutoScroll);
+
+readerView.addEventListener('click', async (e) => {
+    if (!isReaderMode) return;
+    if (!audioContext) await initAudioContext();
+    if (audioContext.state === 'suspended') await audioContext.resume();
+
+    const chunkEl = e.target.closest('.reader-chunk');
+    if (chunkEl) {
+        const id = chunkEl.id;
+        const index = chunksData.findIndex(c => c.ids.includes(id));
+        if (index !== -1) playChunk(index);
+    }
+});
+
+// --- Navigation Logic ---
+async function skipNext() {
+    if (!isReaderMode || chunksData.length === 0) return;
+    if (currentChunkIndex < chunksData.length - 1) {
+        if (currentSourceNode) try { currentSourceNode.stop(); } catch(e){}
+        playChunk(currentChunkIndex + 1);
+    } else {
+        showToast("已经是最后一句了");
+    }
+}
+
+async function skipPrev() {
+    if (!isReaderMode || chunksData.length === 0) return;
+    if (currentChunkIndex > 0) {
+        if (currentSourceNode) try { currentSourceNode.stop(); } catch(e){}
+        playChunk(currentChunkIndex - 1);
+    } else {
+        showToast("已经是第一句了");
+    }
+}
+
+// --- Core Logic ---
+
+function getCaretIndex(element) {
+    let position = 0;
+    const isSupported = typeof window.getSelection !== "undefined";
+    if (isSupported) {
+        const selection = window.getSelection();
+        if (selection.rangeCount !== 0) {
+            const range = window.getSelection().getRangeAt(0);
+            const preCaretRange = range.cloneRange();
+            preCaretRange.selectNodeContents(element);
+            preCaretRange.setEnd(range.startContainer, range.startOffset);
+            position = preCaretRange.toString().length;
+        }
+    }
+    return position;
+}
+
+function processTextToReaderMode(autoPlay = false, resetToStart = false) {
+    let rawText = editor.innerText;
+    if (!rawText.trim()) {
+        if(autoPlay) showToast("请输入文本");
+        return;
+    }
+
+    let startOffset = 0;
+    if (!resetToStart) {
+        startOffset = getCaretIndex(editor);
+    }
+
+    rawTextBackup = editor.innerHTML;
+
+    rawText = rawText.replace(/\n\s*\n/g, '\n\n');
+    rawText = rawText.replace(/([\u4e00-\u9fa5])\s+(?=[\u4e00-\u9fa5])/g, '$1');
+    rawText = rawText.replace(/([\u4e00-\u9fa5])\s+(?=[，。！？；：、""''《》）])/g, '$1');
+    rawText = rawText.replace(/([，。！？；：、""''《》）])\s+(?=[\u4e00-\u9fa5])/g, '$1');
+
+    const renderedHtml = marked.parse(rawText);
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = renderedHtml;
+
+    const elementsToClean = tempDiv.querySelectorAll('p, span, div');
+    elementsToClean.forEach(el => {
+        const hasText = el.innerText.trim().length > 0;
+        const cleanHTML = el.innerHTML.replace(/\s|&nbsp;/g, '').toLowerCase();
+        const isOnlyBr = cleanHTML === '' || cleanHTML === '<br>' || cleanHTML === '<br/>';
+        if (!hasText && isOnlyBr) el.remove();
+    });
+
+    chunksData = [];
+    let globalIndex = 0;
+    let charCounter = 0;
+    let startIndexToPlay = 0;
+
+    function wrapTextNodes(node) {
+        if (node.nodeType === Node.TEXT_NODE) {
+            const text = node.nodeValue;
+            if (!text.trim()) return node;
+
+            const fragments = [];
+            let buffer = "";
+            for (let i = 0; i < text.length; i++) {
+                const c = text[i];
+                if (/[.!?。！？,，;；]/.test(c)) {
+                    if ((c === '.' || c === ',' || c === '，') && i > 0 && i < text.length - 1 && /\d/.test(text[i-1]) && /\d/.test(text[i+1])) {
+                        buffer += c;
+                    } else {
+                        buffer += c; fragments.push(buffer); buffer = "";
+                    }
+                } else {
+                    buffer += c;
+                }
+            }
+            if (buffer) fragments.push(buffer);
+
+            const wrapper = document.createDocumentFragment();
+            fragments.forEach(frag => {
+                const span = document.createElement('span');
+                span.className = 'reader-chunk';
+                span.id = `chunk-${globalIndex++}`;
+                span.innerText = frag;
+
+                if (!resetToStart && startOffset >= charCounter && startOffset < (charCounter + frag.length + 20)) {
+                    if(startIndexToPlay === 0) span.dataset.isStartTarget = "true";
+                }
+                charCounter += frag.length;
+                wrapper.appendChild(span);
+            });
+            return wrapper;
+        }
+        else if (node.nodeType === Node.ELEMENT_NODE) {
+            const children = Array.from(node.childNodes);
+            children.forEach(child => {
+                const replacement = wrapTextNodes(child);
+                if (replacement && replacement !== child) {
+                    node.replaceChild(replacement, child);
+                }
+            });
+        }
+        return node;
+    }
+    wrapTextNodes(tempDiv);
+
+    const SPLIT_REGEX = /[.!?。！？,，;；]$/;
+
+    const allSpans = Array.from(tempDiv.querySelectorAll('.reader-chunk'));
+    let currentIds = [];
+    let currentText = "";
+    let lastBlockParent = null;
+    let isTargetFoundInCurrent = false;
+
+    allSpans.forEach((span, idx) => {
+        const blockParent = span.closest('p, h1, h2, h3, h4, h5, h6, li, pre, blockquote') || span.parentElement;
+
+        if (lastBlockParent && blockParent !== lastBlockParent && currentIds.length > 0) {
+            chunksData.push({ ids: [...currentIds], text: currentText });
+            if (isTargetFoundInCurrent && startIndexToPlay === 0) startIndexToPlay = chunksData.length - 1;
+            currentIds = [];
+            currentText = "";
+            isTargetFoundInCurrent = false;
+        }
+        lastBlockParent = blockParent;
+
+        currentIds.push(span.id);
+        currentText += span.innerText;
+        if (span.dataset.isStartTarget) isTargetFoundInCurrent = true;
+
+        const trimmedText = currentText.trim();
+        const isLongEnough = currentText.length > 40;
+        const isLast = idx === allSpans.length - 1;
+
+        if ((isLongEnough || isLast) && trimmedText.length > 0) {
+            chunksData.push({ ids: [...currentIds], text: currentText });
+            if (isTargetFoundInCurrent && startIndexToPlay === 0) startIndexToPlay = chunksData.length - 1;
+            currentIds = [];
+            currentText = "";
+            isTargetFoundInCurrent = false;
+        }
+    });
+
+    readerView.innerHTML = tempDiv.innerHTML;
+    editor.classList.add('hidden');
+    readerView.classList.remove('hidden');
+    editorOverlay.classList.remove('hidden');
+
+    isReaderMode = true;
+    audioCache.clear();
+    btnStop.disabled = false;
+    iconStopEdit.className = "fa-solid fa-pen-to-square text-base md:text-lg";
+
+    updateUIState('paused');
+
+    if (resetToStart) {
+        startIndexToPlay = 0;
+        readerView.scrollTop = 0;
+    }
+
+    if (autoPlay) {
+        playChunk(startIndexToPlay);
+    } else {
+        showToast("准备就绪，点击播放");
+        if (!resetToStart) {
+            const targetChunk = chunksData[startIndexToPlay];
+            if(targetChunk && targetChunk.ids.length > 0) {
+                const el = document.getElementById(targetChunk.ids[0]);
+                if(el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+        } else {
+            currentChunkIndex = -1;
+        }
+    }
+}
+
+function stopEverything() {
+    if (currentSourceNode) {
+        currentSourceNode.onended = null;
+        try { currentSourceNode.stop(); } catch(e){}
+        currentSourceNode = null;
+    }
+
+    isReaderMode = false;
+    isPlaying = false;
+    isPaused = false;
+    currentChunkIndex = -1;
+    currentApiId = null;
+    audioCache.clear();
+    setProgress(0);
+
+    readerView.classList.add('hidden');
+    editor.classList.remove('hidden');
+    editorOverlay.classList.add('hidden');
+
+    iconStopEdit.className = "fa-solid fa-stop text-base md:text-lg";
+
+    updateUIState('stopped');
+}
+
+async function playChunk(index) {
+    if (index >= chunksData.length) {
+        showToast("朗读完成");
+        updateUIState('paused');
+        isPlaying = false;
+        return;
+    }
+
+    currentChunkIndex = index;
+    highlightActiveChunk(index);
+    updateUIState('loading');
+    setProgress((index + 1) / chunksData.length);
+
+    await initAudioContext();
+    isPaused = false;
+
+    if (currentSourceNode) {
+        currentSourceNode.onended = null;
+        try { currentSourceNode.stop(); } catch(e){}
+        currentSourceNode = null;
+    }
+
+    try {
+        const buffer = await getAudioBuffer(index);
+        if (!isReaderMode || currentChunkIndex !== index) return;
+
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(gainNode);
+        source.onended = () => {
+            if (isReaderMode && isPlaying && !isPaused && currentChunkIndex === index) playChunk(index + 1);
+        };
+        source.start(0);
+        currentSourceNode = source;
+
+        updateUIState('playing');
+        preloadChunk(index + 1);
+        preloadChunk(index + 2);
+    } catch (err) {
+        console.error("Play error:", err);
+        showToast("合成失败，跳过该句");
+        setTimeout(() => playChunk(index + 1), 500);
+    }
+}
+
+function preloadChunk(index) {
+    if (index < chunksData.length && !audioCache.has(index)) {
+        getAudioBuffer(index).catch(e => console.warn("Preload failed", e));
+    }
+}
+
+function speakSsmlWithRetry(synthesizer, ssml, retriesLeft, delayMs) {
+    return new Promise((resolve, reject) => {
+        const attempt = (rl) => {
+            synthesizer.speakSsmlAsync(
+                ssml,
+                result => {
+                    if (result.reason === SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+                        resolve(result);
+                    } else {
+                        if (rl > 0) {
+                            console.warn(`Azure synth failed. Retrying in ${delayMs}ms... (${rl} left)`);
+                            setTimeout(() => attempt(rl - 1), delayMs);
+                        } else {
+                            reject("Azure Error: " + result.errorDetails);
+                        }
+                    }
+                },
+                err => {
+                    if (rl > 0) {
+                        console.warn(`Azure network error. Retrying in ${delayMs}ms... (${rl} left)`);
+                        setTimeout(() => attempt(rl - 1), delayMs);
+                    } else {
+                        reject(err);
+                    }
+                }
+            );
+        };
+        attempt(retriesLeft);
+    });
+}
+
+function getAudioBuffer(index) {
+    if (audioCache.has(index)) return audioCache.get(index);
+    const text = chunksData[index].text;
+    const rate = speedSlider.value;
+    const voice = voiceSelect.value;
+
+    const promise = new Promise(async (resolve, reject) => {
+        const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="zh-CN"><voice name="${voice}"><prosody rate="${rate}">${escapeXml(text)}</prosody></voice></speak>`;
+        const apiConfig = getNextApiConfig();
+        if (!apiConfig) { reject("No API configured"); return; }
+        const synthesizer = getSynthesizer(apiConfig.id);
+        if (!synthesizer) { reject("Synthesizer not available for " + apiConfig.label); return; }
+
+        console.log(`[TTS] Chunk ${index + 1} using API: ${apiConfig.label} (${apiConfig.region})`);
+
+        try {
+            const result = await speakSsmlWithRetry(synthesizer, ssml, 2, 4000);
+            audioContext.decodeAudioData(result.audioData, b => resolve(b), e => reject(e));
+        } catch (err) {
+            reject(err);
+        }
+    });
+    audioCache.set(index, promise);
+    return promise;
+}
+
+// --- Utils ---
+async function initAudioContext() {
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        gainNode = audioContext.createGain();
+        gainNode.connect(audioContext.destination);
+        gainNode.gain.value = parseFloat(volumeSlider.value);
+    }
+    if (audioContext.state === 'suspended') await audioContext.resume();
+}
+
+function initSynthesizerPool() {
+    for (const [id, syn] of synthesizerPool) {
+        try { syn.close(); } catch(e) {}
+    }
+    synthesizerPool.clear();
+
+    const apis = getEnabledApis();
+    apis.forEach(api => {
+        try {
+            const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(api.key, api.region);
+            synthesizerPool.set(api.id, new SpeechSDK.SpeechSynthesizer(speechConfig, null));
+            console.log(`Synthesizer created for: ${api.label} (${api.region})`);
+        } catch(e) {
+            console.error(`Failed to create synthesizer for ${api.label}:`, e);
+        }
+    });
+}
+
+function getSynthesizer(apiId) {
+    if (synthesizerPool.has(apiId)) return synthesizerPool.get(apiId);
+    const apis = getApiList();
+    const api = apis.find(a => a.id === apiId);
+    if (api) {
+        const speechConfig = SpeechSDK.SpeechConfig.fromSubscription(api.key, api.region);
+        const syn = new SpeechSDK.SpeechSynthesizer(speechConfig, null);
+        synthesizerPool.set(api.id, syn);
+        return syn;
+    }
+    return null;
+}
+
+function getNextApiConfig() {
+    const apis = getEnabledApis();
+    if (apis.length === 0) return null;
+
+    const mode = localStorage.getItem('azure_api_mode') || 'round-robin';
+    if (mode === 'single') {
+        const singleId = localStorage.getItem('azure_api_single_id');
+        const target = apis.find(a => a.id === singleId) || apis[0];
+        currentApiId = target.id;
+        return target;
+    }
+
+    if (apiRoundRobinIndex >= apis.length) apiRoundRobinIndex = 0;
+    const api = apis[apiRoundRobinIndex];
+    currentApiId = api.id;
+    apiRoundRobinIndex = (apiRoundRobinIndex + 1) % apis.length;
+    return api;
+}
+
+function togglePlayPause() {
+    if (isPaused) {
+        audioContext.resume();
+        isPaused = false;
+        updateUIState('playing');
+    } else {
+        audioContext.suspend();
+        isPaused = true;
+        updateUIState('paused');
+    }
+}
+
+function setProgress(percent) {
+    const offset = RING_CIRCUMFERENCE - (percent * RING_CIRCUMFERENCE);
+    progressRing.style.strokeDashoffset = offset;
+}
+
+function highlightActiveChunk(index) {
+    document.querySelectorAll('.active-chunk').forEach(e => e.classList.remove('active-chunk'));
+    const ids = chunksData[index].ids;
+    if (ids && ids.length > 0) {
+        ids.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('active-chunk');
+        });
+        const firstEl = document.getElementById(ids[0]);
+        // Only scroll if auto-scroll is enabled
+        const autoScrollEnabled = localStorage.getItem('azure_reader_auto_scroll') !== 'false';
+        if(firstEl && autoScrollEnabled) firstEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+}
+
+function toggleAutoScroll() {
+    const checkbox = document.getElementById('auto-scroll-toggle');
+    const isEnabled = checkbox.checked;
+    localStorage.setItem('azure_reader_auto_scroll', isEnabled ? 'true' : 'false');
+    showToast(isEnabled ? "跟随滚动已开启" : "跟随滚动已关闭");
+}
+
+function adjustFontSize(delta) {
+    const currentSize = parseInt(localStorage.getItem('azure_reader_font_size') || '16');
+    const newSize = Math.min(32, Math.max(12, currentSize + delta));
+    localStorage.setItem('azure_reader_font_size', newSize);
+    document.getElementById('text-editor').style.fontSize = newSize + 'px';
+    document.getElementById('reader-view').style.fontSize = newSize + 'px';
+    document.getElementById('font-size-display').textContent = newSize + 'px';
+}
+
+document.getElementById('font-decrease').addEventListener('click', () => adjustFontSize(-2));
+document.getElementById('font-increase').addEventListener('click', () => adjustFontSize(2));
+
+function updateUIState(state) {
+    const badge = document.getElementById('status-badge');
+
+    if (isReaderMode) {
+        btnStop.disabled = false;
+        btnStop.title = "停止朗读并编辑";
+        iconStopEdit.className = "fa-solid fa-pen-to-square text-base md:text-lg";
+    } else {
+        btnStop.disabled = true;
+        btnStop.title = "停止";
+        iconStopEdit.className = "fa-solid fa-stop text-base md:text-lg";
+    }
+
+    if (state === 'loading') {
+        isPlaying = true; iconPlay.classList.add('hidden'); playSpinner.classList.remove('hidden');
+        badge.classList.remove('hidden', 'opacity-0'); badge.textContent = "缓冲中...";
+        badge.className = "absolute -bottom-8 z-50 bg-indigo-500 dark:bg-indigo-600 text-white text-[10px] px-2 py-1 rounded-full shadow-lg";
+    } else if (state === 'playing') {
+        isPlaying = true; iconPlay.classList.add('hidden'); iconPause.classList.remove('hidden'); playSpinner.classList.add('hidden');
+        badge.classList.remove('hidden', 'opacity-0');
+        const apiLabel = currentApiId ? (getApiList().find(a => a.id === currentApiId)?.label || '') : '';
+        badge.textContent = `朗读 ${currentChunkIndex + 1}/${chunksData.length}` + (apiLabel ? ` · ${apiLabel}` : '');
+        badge.className = "absolute -bottom-8 z-50 bg-green-600 dark:bg-green-700 text-white text-[10px] px-3 py-1 rounded-full shadow-md whitespace-nowrap left-1/2 transform -translate-x-1/2 border border-green-500 dark:border-green-800";
+    } else if (state === 'paused') {
+        iconPlay.classList.remove('hidden'); iconPause.classList.add('hidden'); playSpinner.classList.add('hidden');
+        badge.textContent = "已暂停"; badge.className = "absolute -bottom-8 z-50 bg-amber-500 dark:bg-amber-600 text-white text-[10px] px-3 py-1 rounded-full whitespace-nowrap left-1/2 transform -translate-x-1/2 shadow-md border border-amber-400 dark:border-amber-700";
+    } else if (state === 'stopped') {
+        iconPlay.classList.remove('hidden'); iconPause.classList.add('hidden'); playSpinner.classList.add('hidden');
+        badge.classList.add('opacity-0');
+    }
+}
+
+// --- Settings / Multi-API ---
+
+function getApiList() {
+    try { return JSON.parse(localStorage.getItem('azure_apis')) || []; } catch(e) { return []; }
+}
+
+function getEnabledApis() {
+    return getApiList().filter(a => a.enabled !== false);
+}
+
+function migrateOldSettings() {
+    const oldKey = localStorage.getItem('azure_speech_key');
+    const oldRegion = localStorage.getItem('azure_speech_region');
+    if (oldKey && oldRegion && !localStorage.getItem('azure_apis')) {
+        const apis = [{ id: 'api-' + Date.now(), label: 'API-1', key: oldKey, region: oldRegion, enabled: true }];
+        localStorage.setItem('azure_apis', JSON.stringify(apis));
+        localStorage.removeItem('azure_speech_key');
+        localStorage.removeItem('azure_speech_region');
+    }
+}
+
+function loadSettings() {
+    const mode = localStorage.getItem('azure_api_mode') || 'round-robin';
+    document.getElementById(mode === 'single' ? 'mode-single' : 'mode-roundrobin').checked = true;
+    updateModeUI();
+}
+
+function renderApiList() {
+    const container = document.getElementById('api-list');
+    container.innerHTML = '';
+    const apis = getApiList();
+    const singleSelect = document.getElementById('single-api-select');
+
+    singleSelect.innerHTML = '';
+    apis.forEach(api => {
+        const opt = document.createElement('option');
+        opt.value = api.id;
+        opt.textContent = `${api.label} (${api.region})`;
+        singleSelect.appendChild(opt);
+    });
+    const savedSingleId = localStorage.getItem('azure_api_single_id');
+    if (savedSingleId && apis.find(a => a.id === savedSingleId)) singleSelect.value = savedSingleId;
+
+    if (apis.length === 0) {
+        container.innerHTML = '<p class="text-center text-gray-400 dark:text-gray-500 text-sm py-4">暂无 API 配置，请点击下方添加</p>';
+        return;
+    }
+
+    apis.forEach(api => {
+        const div = document.createElement('div');
+        div.className = 'bg-gray-50 dark:bg-gray-700/50 rounded-xl p-3 border border-gray-200 dark:border-gray-600';
+        div.dataset.apiId = api.id;
+        div.innerHTML = `
+            <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-2 flex-1 min-w-0">
+                    <input type="text" value="${escapeHtml(api.label)}" class="api-label bg-transparent border-b border-transparent hover:border-gray-300 dark:hover:border-gray-500 focus:border-indigo-500 outline-none text-sm font-bold text-gray-700 dark:text-gray-200 w-24 truncate" placeholder="标签名">
+                    <span class="text-xs text-gray-400 dark:text-gray-500 font-mono truncate">${escapeHtml(api.region)}</span>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" class="api-enabled sr-only peer" ${api.enabled !== false ? 'checked' : ''}>
+                        <div class="w-8 h-4 bg-gray-300 dark:bg-gray-600 peer-checked:bg-indigo-500 rounded-full after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4"></div>
+                    </label>
+                    <button class="api-delete text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition p-1" title="删除">
+                        <i class="fa-solid fa-trash-can text-xs"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <input type="text" value="${escapeHtml(api.region)}" class="api-region w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white border px-2 py-1.5 text-xs font-mono outline-none focus:border-indigo-500" placeholder="Region">
+                <input type="password" value="${escapeHtml(api.key)}" class="api-key w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white border px-2 py-1.5 text-xs font-mono outline-none focus:border-indigo-500" placeholder="Key">
+            </div>
+        `;
+        container.appendChild(div);
+
+        div.querySelector('.api-delete').addEventListener('click', () => {
+            div.remove();
+            updateSingleSelect();
+        });
+        div.querySelector('.api-enabled').addEventListener('change', updateSingleSelect);
+    });
+}
+
+function addApiItem() {
+    const apis = getApiList();
+    const newId = 'api-' + Date.now();
+    const defaultLabel = 'API-' + (apis.length + 1);
+    const newApi = { id: newId, label: defaultLabel, key: '', region: '', enabled: true };
+    apis.push(newApi);
+    localStorage.setItem('azure_apis', JSON.stringify(apis));
+    renderApiList();
+    const items = document.querySelectorAll('#api-list > div');
+    const last = items[items.length - 1];
+    if (last) last.querySelector('.api-region').focus();
+}
+
+function updateModeUI() {
+    const isSingle = document.getElementById('mode-single').checked;
+    document.getElementById('single-api-select').classList.toggle('hidden', !isSingle);
+}
+
+function updateSingleSelect() {
+    const select = document.getElementById('single-api-select');
+    const currentVal = select.value;
+    select.innerHTML = '';
+    document.querySelectorAll('#api-list > div').forEach(div => {
+        const enabled = div.querySelector('.api-enabled').checked;
+        const label = div.querySelector('.api-label').value;
+        const region = div.querySelector('.api-region').value;
+        const opt = document.createElement('option');
+        opt.value = div.dataset.apiId;
+        opt.textContent = `${label} (${region})`;
+        if (!enabled) opt.disabled = true;
+        select.appendChild(opt);
+    });
+    if (currentVal && select.querySelector(`option[value="${currentVal}"]`)) select.value = currentVal;
+}
+
+function openModal() {
+    renderApiList();
+    loadSettings();
+    modal.classList.remove('hidden');
+    setTimeout(() => { modal.classList.remove('opacity-0'); document.getElementById('settings-content').classList.remove('scale-95'); }, 10);
+}
+function closeModal() { modal.classList.add('opacity-0'); document.getElementById('settings-content').classList.add('scale-95'); setTimeout(() => modal.classList.add('hidden'), 300); }
+
+function saveAndReload() {
+    const items = document.querySelectorAll('#api-list > div');
+    const apis = [];
+    let hasError = false;
+    items.forEach(div => {
+        const label = div.querySelector('.api-label').value.trim();
+        const region = div.querySelector('.api-region').value.trim();
+        const key = div.querySelector('.api-key').value.trim();
+        const enabled = div.querySelector('.api-enabled').checked;
+        if (!region || !key) { hasError = true; return; }
+        apis.push({ id: div.dataset.apiId, label: label || 'API', key, region, enabled });
+    });
+    if (apis.length === 0 || hasError) { showToast("请至少填写一个完整的 API 配置（Region + Key）"); return; }
+
+    localStorage.setItem('azure_apis', JSON.stringify(apis));
+    localStorage.setItem('azure_api_mode', document.getElementById('mode-single').checked ? 'single' : 'round-robin');
+    localStorage.setItem('azure_api_single_id', document.getElementById('single-api-select').value);
+
+    audioCache.clear();
+    apiRoundRobinIndex = 0;
+    initSynthesizerPool();
+    closeModal();
+    showToast("已保存，共 " + apis.length + " 个 API");
+    populateVoiceList();
+}
+
+function initApis() {
+    initSynthesizerPool();
+    populateVoiceList();
+}
+
+function populateVoiceList() {
+    voiceSelect.innerHTML = '<option value="" disabled selected>正在初始化...</option>';
+
+    const apis = getEnabledApis();
+    if (apis.length === 0) return;
+
+    const tryFetchVoices = async (index) => {
+        if (index >= apis.length) { console.warn("All APIs failed to fetch voices"); return; }
+        const api = apis[index];
+        try {
+            const config = SpeechSDK.SpeechConfig.fromSubscription(api.key, api.region);
+            const syn = new SpeechSDK.SpeechSynthesizer(config, null);
+            const res = await syn.getVoicesAsync();
+
+            voiceSelect.innerHTML = '';
+            const sorted = [...res.voices.filter(v=>v.locale.startsWith('zh')), ...res.voices.filter(v=>v.locale.startsWith('en'))];
+            let hasSelected = false;
+            sorted.forEach(v => {
+                const opt = document.createElement('option');
+                opt.value = v.shortName;
+                opt.text = `${v.localName} (${v.locale})`;
+                if (!hasSelected && v.shortName.includes('XiaochenNeural')) { opt.selected = true; hasSelected = true; }
+                else if (!hasSelected && v.shortName.includes('XiaoxiaoNeural') && !sorted.some(s=>s.shortName.includes('Xiaochen'))) { if(v.shortName==='zh-CN-XiaoxiaoNeural'){opt.selected=true; hasSelected=true;} }
+                voiceSelect.appendChild(opt);
+            });
+            syn.close();
+        } catch(e) {
+            console.warn(`Voice fetch failed for ${api.label}, trying next...`, e);
+            tryFetchVoices(index + 1);
+        }
+    };
+    tryFetchVoices(0);
+}
+
+function escapeXml(s) { return s.replace(/[<>&'"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','\'':'&apos;','"':'&quot;'}[c])); }
+function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showToast(m) { document.getElementById('toast-msg').textContent=m; const t=document.getElementById('toast'); t.classList.remove('translate-y-[-20px]','opacity-0'); setTimeout(()=>t.classList.add('translate-y-[-20px]','opacity-0'), 3000); }
+
+function exportConfig() {
+    const config = {
+        apis: getApiList(),
+        mode: localStorage.getItem('azure_api_mode') || 'round-robin',
+        singleId: localStorage.getItem('azure_api_single_id'),
+        voice: voiceSelect.value,
+        speed: speedSlider.value,
+        volume: volumeSlider.value,
+        autoScroll: localStorage.getItem('azure_reader_auto_scroll')
+    };
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const date = new Date().toISOString().slice(0,10);
+    a.download = `azure-reader-config-${date}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast("配置已导出");
+}
+
+function importConfig(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        try {
+            const config = JSON.parse(event.target.result);
+            if (!config.apis || !Array.isArray(config.apis)) {
+                showToast("无效的配置文件");
+                return;
+            }
+            // Validate each API entry
+            for (const api of config.apis) {
+                if (!api.key || !api.region) {
+                    showToast("配置文件包含无效的 API 条目");
+                    return;
+                }
+            }
+            localStorage.setItem('azure_apis', JSON.stringify(config.apis));
+            if (config.mode) localStorage.setItem('azure_api_mode', config.mode);
+            if (config.singleId) localStorage.setItem('azure_api_single_id', config.singleId);
+            if (config.voice) voiceSelect.value = config.voice;
+            if (config.speed) { speedSlider.value = config.speed; speedDisplay.textContent = config.speed + 'x'; }
+            if (config.volume) { volumeSlider.value = config.volume; localStorage.setItem('azure_reader_volume', config.volume); }
+            if (config.autoScroll) localStorage.setItem('azure_reader_auto_scroll', config.autoScroll);
+
+            renderApiList();
+            loadSettings();
+            initApis();
+            showToast("配置已导入，共 " + config.apis.length + " 个 API");
+        } catch (err) {
+            console.error(err);
+            showToast("配置文件解析失败");
+        }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // Reset file input
+}
+</script>
+</body>
+</html>
